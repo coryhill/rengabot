@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+develop-eggs/
+egg-info/
+*.egg
+
+# Virtual environment
+.env
+.venv
+venv/
+env/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*~
+
+# Test files
+.pytest_cache/
+
+# Jupyter Notebook files
+.ipynb_checkpoints
+
+# Miscellaneous
+.DS_Store
+
+# Config
+config.yaml
