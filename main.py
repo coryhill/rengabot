@@ -1,23 +1,35 @@
 #!/usr/bin/env python3
 
-import os
+import threading
 import yaml
-from messengers import initialize_messenger
+from messengers import ChatMessenger, initialize_messenger
 from model import load_model
 
 def load_config(path="config.yaml"):
     with open(path, "r") as f:
         return yaml.safe_load(f)
     
-def main():
-    config = load_config()
+class MessengerThread(threading.Thread):
+    def __init__(self, chat_messenger: ChatMessenger):
+        super().__init__()
+        self.messenger = chat_messenger
 
-    model_config = config["model"]
-    model = load_model(model_config["class"], model_config["args"])
+class Rengabot:
+    def __init__(self, config):
+        self.config = config
+        self.messengers = []
     
-    for svc, svc_config in config["messengers"].items():
-        if svc_config["enabled"]:
-            initialize_messenger(svc, svc_config)
+    def run(self):
+        model_config = config["model"]
+        model = load_model(model_config["class"], model_config["args"])
+        
+        for svc, svc_config in config["messengers"].items():
+            if svc_config["enabled"]:
+                messenger = initialize_messenger(svc, svc_config)
+                messenger.run()
+                self.messengers.append(messenger)
 
 if __name__ == '__main__':
-    main()
+    config = load_config()
+    rengabot = Rengabot(config)
+    rengabot.run()

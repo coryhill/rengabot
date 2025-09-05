@@ -16,7 +16,7 @@ class SlackMessenger(ChatMessenger):
             raise Exception("no bot token set for Slack")
         
         if os.environ.get("SLACK_APP_TOKEN"):
-            self.bot_token = os.environ["SLACK_APP_TOKEN"]
+            self.app_token = os.environ["SLACK_APP_TOKEN"]
         elif config.get("app_token"):
             self.app_token = config.app_token
         else:
@@ -30,10 +30,10 @@ class SlackMessenger(ChatMessenger):
         self.app.command("/set-image")(self.handle_set_image_cmd)
         self.app.view("upload_media")(self.handle_set_image_upload)
     
-    def handle_mention(event, say):
+    def handle_mention(self, event, say):
         say(f"User {event["user"]} said \"{event["text"]}\"")
 
-    def handle_set_image_cmd(ack, body, client):
+    def handle_set_image_cmd(self, ack, body, client):
         ack()
         user = body["user_id"]
         client.views_open(
@@ -59,7 +59,7 @@ class SlackMessenger(ChatMessenger):
             }
         )
 
-    def handle_set_image_upload(ack, body, client):
+    def handle_set_image_upload(self, ack, body, client):
         files_state = body["view"]["state"]["values"]["file_block"]["file_action"]
         file_ids = files_state.get("files", [])  # list of file IDs
 
