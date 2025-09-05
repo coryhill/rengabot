@@ -1,0 +1,16 @@
+messengers:
+  slack:
+    enabled: true
+    bot_token: "my-bot-token"
+    app_token: "my-app-token"
+    # Which users are allowed to reset images, etc.
+    # user IDs in slack are unique per team
+    admins:
+      - U12345678
+      - U98765432
+  discord:
+    enabled: false
+model:
+  class: model.gemini.GeminiModel
+  args:
+    api_key: "my-secret-key"
