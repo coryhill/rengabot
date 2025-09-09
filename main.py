@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import threading
 import yaml
 from messengers import ChatMessenger, initialize_messenger
@@ -19,13 +20,16 @@ class Rengabot:
         self.config = config
         self.messengers = []
     
+    def update_image(path, src_file):
+        os.replace(src_file, f"{path}/current.png")
+
     def run(self):
         model_config = config["model"]
         model = load_model(model_config["class"], model_config["args"])
         
         for svc, svc_config in config["messengers"].items():
             if svc_config["enabled"]:
-                messenger = initialize_messenger(svc, svc_config)
+                messenger = initialize_messenger(svc, svc_config, self)
                 messenger.run()
                 self.messengers.append(messenger)
 

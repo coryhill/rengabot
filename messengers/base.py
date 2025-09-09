@@ -2,8 +2,9 @@ from abc import ABC, abstractmethod
 from typing import Callable, Dict, Type
 
 class ChatMessenger(ABC):
-    def __init__(self, config):
+    def __init__(self, config, rengabot):
         self.config = config
+        self.rengabot = rengabot
         
     @abstractmethod
     def run(self):
@@ -21,9 +22,9 @@ def register(name: str) -> Callable[[Type[ChatMessenger]], Type[ChatMessenger]]:
         return cls
     return _decorator
                                     
-def initialize_messenger(service, config):
+def initialize_messenger(service, config, rengabot):
     if service in _REGISTRY:
         cls = _REGISTRY[service]
-        instance = cls(config)
+        instance = cls(config, rengabot)
         instance.run()
         return instance
