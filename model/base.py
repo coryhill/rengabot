@@ -8,7 +8,7 @@ class AIModel(ABC):
         pass
 
     @abstractmethod
-    def generate_image(prompt: str, image_path: str) -> None:
+    def generate_image(self, prompt: str, image_path: str) -> bytes:
         pass
     
 def load_model(class_path: str, args: dict):

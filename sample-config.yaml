@@ -14,3 +14,5 @@ model:
   class: model.gemini.GeminiModel
   args:
     api_key: "my-secret-key"
+    # Override if needed; model availability varies by API tier.
+    image_model: "gemini-2.5-flash-image"

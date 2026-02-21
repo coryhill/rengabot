@@ -3,10 +3,11 @@ import logging
 import os
 from typing import Tuple
 from google import genai
+from google.genai import types
 from .base import AIModel
 
 DEFAULT_INTENT_MODEL = "gemini-2.5-flash-lite"
-DEFAULT_IMAGE_MODEL = "gemini-2.5-flash-image-preview"
+DEFAULT_IMAGE_MODEL = "gemini-2.5-flash-image"
 
 VALIDATION_PROMPT = """
 We are playing a game where we start with an image and the user gives a prompt
@@ -54,20 +55,71 @@ class GeminiModel(AIModel):
         Return a tuple of bool, str where the bool is whether the prompt
         was valid or not, and the string is what was wrong with the prompt
         if it wasn't deemed valid."""
-        client = genai.Client()
+        client = genai.Client(api_key=self.api_key)
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
+            model=self.intent_model,
             contents=VALIDATION_PROMPT + prompt,
             config=types.GenerateContentConfig(
-                thinking_config=types.ThinkingConfig(thinking_budget=0)
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                response_mime_type="application/json",
             ),
         )
         try:
-            r = json.loads(response)
-        except:
-            return(False, "AI model returned a bad response")
-        return (r["valid"], r.get["reason"])
+            r = json.loads(response.text)
+        except Exception:
+            return (False, "AI model returned a bad response")
+        return (r.get("valid", False), r.get("reason"))
 
-    def generate_image(self, prompt: str):
-        pass
+    def generate_image(self, prompt: str, image_path: str) -> bytes:
+        client = genai.Client(api_key=self.api_key)
+        with open(image_path, "rb") as f:
+            image_bytes = f.read()
+        mime_type = _guess_mime_type(image_path)
+        image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+        try:
+            response = client.models.generate_content(
+                model=self.image_model,
+                contents=[prompt, image_part],
+                config=types.GenerateContentConfig(
+                    response_modalities=["TEXT", "IMAGE"],
+                ),
+            )
+        except Exception as e:
+            error_text = str(e)
+            if "not found" in error_text.lower() or "not supported" in error_text.lower():
+                candidates = _list_image_models(client)
+                if candidates:
+                    raise Exception(
+                        "Image model not available. Configure a working image model. "
+                        f"Available image-like models: {', '.join(candidates)}"
+                    ) from e
+            raise
+        parts = []
+        if getattr(response, "parts", None):
+            parts = response.parts
+        elif response.candidates and response.candidates[0].content:
+            parts = response.candidates[0].content.parts
+        for part in parts:
+            if part.inline_data and part.inline_data.data:
+                return part.inline_data.data
+        raise Exception("AI model did not return image data")
+
+def _list_image_models(client: genai.Client) -> list[str]:
+    models = []
+    for m in client.models.list():
+        name = getattr(m, "name", "")
+        actions = (
+            getattr(m, "supported_generation_methods", None)
+            or getattr(m, "supported_actions", None)
+            or []
+        )
+        if "generateContent" in actions and "image" in name:
+            models.append(name)
+    return models
+
+def _guess_mime_type(path: str) -> str:
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".jpg" or ext == ".jpeg":
+        return "image/jpeg"
+    return "image/png"

@@ -25,6 +25,4 @@ def register(name: str) -> Callable[[Type[ChatMessenger]], Type[ChatMessenger]]:
 def initialize_messenger(service, config, rengabot):
     if service in _REGISTRY:
         cls = _REGISTRY[service]
-        instance = cls(config, rengabot)
-        instance.run()
-        return instance
+        return cls(config, rengabot)

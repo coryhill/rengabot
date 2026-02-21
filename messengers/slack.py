@@ -1,6 +1,7 @@
 import json
 import os
 import requests
+from typing import Optional
 from .base import ChatMessenger, register
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -29,12 +30,27 @@ class SlackMessenger(ChatMessenger):
         if os.environ.get("SLACK_APP_TOKEN"):
             self.app_token = os.environ["SLACK_APP_TOKEN"]
         elif config.get("app_token"):
-            self.app_token = config.app_token
+            self.app_token = config["app_token"]
         else:
             raise Exception("no app token set for Slack")
         
         self.app = App(token=self.bot_token)
         self.register_listeners()
+
+    def _is_admin(self, user_id: str) -> bool:
+        return user_id in self.config.get("admins", [])
+
+    def _channel_dir(self, team_id: str, channel_id: str) -> str:
+        uploads_dir = os.environ.get("UPLOADS_DIR", "/tmp")
+        return os.path.join(uploads_dir, team_id, channel_id)
+
+    def _get_current_image_path(self, team_id: str, channel_id: str) -> Optional[str]:
+        channel_dir = self._channel_dir(team_id, channel_id)
+        for ext in ("png", "jpg", "jpeg"):
+            path = os.path.join(channel_dir, f"current.{ext}")
+            if os.path.exists(path):
+                return path
+        return None
 
     def register_listeners(self):
         self.app.event("app_mention")(self.handle_mention)
@@ -52,6 +68,7 @@ class SlackMessenger(ChatMessenger):
         # See which subcommand they're using
         fields = text.split()
         if len(fields) == 0:
+            respond(text=HELP_MESSAGE, response_type="ephemeral")
             return
             
         match fields[0]:
@@ -65,9 +82,50 @@ class SlackMessenger(ChatMessenger):
                     respond(
                         text=CHANGE_USAGE,
                         response_type="ephemeral"
-                )
+                    )
+                    return
                 text = ' '.join(fields[1:])
+                channel_id = body.get("channel_id", "")
+                team_id = body.get("team_id", "")
+                current_path = self._get_current_image_path(team_id, channel_id)
+                if not current_path:
+                    respond(
+                        text="No image has been set yet. An admin must run `/rengabot set-image` first.",
+                        response_type="ephemeral",
+                    )
+                    return
+                respond(text="Working on it...", response_type="ephemeral")
+                is_valid, reason = self.rengabot.model.validate_prompt(text)
+                if not is_valid:
+                    respond(
+                        text=f"Disallowed change: {reason or 'prompt does not match the rules.'}",
+                        response_type="ephemeral",
+                    )
+                    return
+                try:
+                    image_bytes = self.rengabot.model.generate_image(text, current_path)
+                except Exception as e:
+                    logger.exception("Image generation failed: %s", e)
+                    respond(text="Image generation failed. Please try again.", response_type="ephemeral")
+                    return
+                channel_dir = self._channel_dir(team_id, channel_id)
+                os.makedirs(channel_dir, exist_ok=True)
+                next_path = os.path.join(channel_dir, "current.png")
+                with open(next_path, "wb") as f:
+                    f.write(image_bytes)
+                client.files_upload_v2(
+                    channel=channel_id,
+                    file=next_path,
+                    filename="renga.png",
+                    initial_comment=f"Renga update: {text}",
+                )
             case "set-image":
+                if not self._is_admin(user_id):
+                    respond(
+                        text="Only admins can set the image.",
+                        response_type="ephemeral",
+                    )
+                    return
                 channel_id = body.get("channel_id", "")
                 client.views_open(
                     trigger_id=body["trigger_id"],
@@ -108,11 +166,10 @@ class SlackMessenger(ChatMessenger):
                 )
 
     def handle_set_image_upload(self, ack, body, client, logger):
-        ack()
-
         private_metadata = json.loads(body["view"]["private_metadata"])
         channel_id = private_metadata["channel_id"]
         team_id = body["team"]["id"]
+        user_id = body["user"]["id"]
         state_values = body["view"]["state"]["values"]
         
         try:
@@ -123,6 +180,14 @@ class SlackMessenger(ChatMessenger):
         if not files:
             ack(response_action="errors", errors={"file_block": "Please attach a file before submitting."})
             return
+        ack()
+        if not self._is_admin(user_id):
+            client.chat_postEphemeral(
+                channel=channel_id,
+                user=user_id,
+                text="Only admins can set the image.",
+            )
+            return
         
         description = state_values["message_input_block"]["message_input_element"]["value"]
 
@@ -130,6 +195,9 @@ class SlackMessenger(ChatMessenger):
         file_info = client.files_info(file=file_id)
         f = file_info["file"]
         file_permalink = f["permalink"]
+        file_ext = (f.get("filetype") or "png").lower()
+        if file_ext not in ("png", "jpg", "jpeg"):
+            file_ext = "png"
 
         # Download the image
         try:
@@ -138,15 +206,14 @@ class SlackMessenger(ChatMessenger):
 
             # Ensure a safe local path
             # TODO: figure out where files should actually go
-            uploads_dir = os.environ.get("UPLOADS_DIR", "/tmp")
-            dest_path = os.path.join(uploads_dir, team_id, channel_id)
+            dest_path = self._channel_dir(team_id, channel_id)
             os.makedirs(dest_path, exist_ok=True)
-            local_path = os.path.join(dest_path, "current")
+            local_path = os.path.join(dest_path, f"current.{file_ext}")
 
             # Stream download with bot token
             resp = requests.get(
                 url,
-                headers={"Authorization": f"Bearer {os.environ['SLACK_BOT_TOKEN']}"},
+                headers={"Authorization": f"Bearer {self.bot_token}"},
                 stream=True,
                 timeout=60,
             )

@@ -27,11 +27,11 @@ class Rengabot:
 
         self.messengers = []
     
-    def update_image(path, src_file):
+    def update_image(self, path, src_file):
         os.replace(src_file, f"{path}/current.png")
 
     def run(self):
-        for svc, svc_config in config["messengers"].items():
+        for svc, svc_config in self.config["messengers"].items():
             if svc_config["enabled"]:
                 messenger = initialize_messenger(svc, svc_config, self)
                 messenger.run()
