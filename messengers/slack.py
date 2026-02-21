@@ -1,16 +1,17 @@
 import json
-import logging
 import os
 import requests
 from .base import ChatMessenger, register
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-logging.basicConfig(level=logging.INFO)
-
 HELP_MESSAGE = """Available subcommands:
 - *change* - make a change to the current image
 - *set-image* - (admin only) Set or reset the starting image
+"""
+
+CHANGE_USAGE = """Usage: /rengabot change [describe change]
+Example: /rengabot change add an angry dinosaur in the background
 """
 
 @register("slack")
@@ -60,7 +61,12 @@ class SlackMessenger(ChatMessenger):
                     response_type="ephemeral"
                 )
             case "change":
-                pass
+                if len(fields) == 1:
+                    respond(
+                        text=CHANGE_USAGE,
+                        response_type="ephemeral"
+                )
+                text = ' '.join(fields[1:])
             case "set-image":
                 channel_id = body.get("channel_id", "")
                 client.views_open(
