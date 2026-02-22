@@ -22,3 +22,5 @@ model:
     api_key: "my-secret-key"
     # Override if needed; model availability varies by API tier.
     image_model: "gemini-2.5-flash-image"
+    # Cache validation rules to reduce prompt tokens (set a TTL like "3600s" to enable)
+    intent_cache_ttl: null

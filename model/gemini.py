@@ -39,7 +39,13 @@ The user's prompt is:
 logger = logging.getLogger(__name__)
 
 class GeminiModel(AIModel):
-    def __init__(self, api_key=None, intent_model=DEFAULT_INTENT_MODEL, image_model=DEFAULT_IMAGE_MODEL):
+    def __init__(
+        self,
+        api_key=None,
+        intent_model=DEFAULT_INTENT_MODEL,
+        image_model=DEFAULT_IMAGE_MODEL,
+        intent_cache_ttl=None,
+    ):
         if os.environ.get("GEMINI_API_KEY"):
             self.api_key = os.environ["GEMINI_API_KEY"]
         elif api_key:
@@ -49,6 +55,14 @@ class GeminiModel(AIModel):
         self.intent_model = intent_model
         self.image_model = image_model
         self.client = genai.Client(api_key=self.api_key)
+        self.intent_cache_ttl = intent_cache_ttl
+        self._intent_cache_name = None
+        if self.intent_cache_ttl:
+            try:
+                self._intent_cache_name = self._ensure_intent_cache()
+            except Exception:
+                logger.exception("Failed to create intent cache; falling back to inline prompt.")
+                self._intent_cache_name = None
         
     def validate_prompt(self, prompt: str) -> Tuple[bool, str]:
         """Make sure the user's prompt obeys the rules of the game. We do this
@@ -56,14 +70,17 @@ class GeminiModel(AIModel):
         Return a tuple of bool, str where the bool is whether the prompt
         was valid or not, and the string is what was wrong with the prompt
         if it wasn't deemed valid."""
-        response = self.client.models.generate_content(
-            model=self.intent_model,
-            contents=VALIDATION_PROMPT + prompt,
-            config=types.GenerateContentConfig(
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
-                response_mime_type="application/json",
-            ),
-        )
+        if self._intent_cache_name:
+            try:
+                response = self._generate_validation(prompt, self._intent_cache_name)
+            except Exception as e:
+                if self.intent_cache_ttl and "not found" in str(e).lower():
+                    self._intent_cache_name = self._ensure_intent_cache()
+                    response = self._generate_validation(prompt, self._intent_cache_name)
+                else:
+                    raise
+        else:
+            response = self._generate_validation(prompt, None)
         try:
             r = json.loads(response.text)
         except Exception:
@@ -102,6 +119,37 @@ class GeminiModel(AIModel):
             if part.inline_data and part.inline_data.data:
                 return part.inline_data.data
         raise Exception("AI model did not return image data")
+
+    def _ensure_intent_cache(self) -> str:
+        cache = self.client.caches.create(
+            model=self.intent_model,
+            config=types.CreateCachedContentConfig(
+                contents=[
+                    types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(text=VALIDATION_PROMPT)],
+                    )
+                ],
+                ttl=self.intent_cache_ttl,
+                display_name="rengabot-validation-rules",
+            ),
+        )
+        return cache.name
+
+    def _generate_validation(self, prompt: str, cache_name: str | None):
+        if cache_name:
+            contents = prompt
+        else:
+            contents = VALIDATION_PROMPT + prompt
+        return self.client.models.generate_content(
+            model=self.intent_model,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                response_mime_type="application/json",
+                cached_content=cache_name,
+            ),
+        )
 
 def _list_image_models(client: genai.Client) -> list[str]:
     models = []

@@ -18,7 +18,7 @@ class DummyClient:
 
 def test_validate_prompt_parses_json(monkeypatch):
     response = types.SimpleNamespace(text=json.dumps({"valid": True}))
-    model = GeminiModel(api_key="x")
+    model = GeminiModel(api_key="x", intent_cache_ttl=None)
     model.client = DummyClient(response)
 
     valid, reason = model.validate_prompt("add a bird")
@@ -28,7 +28,7 @@ def test_validate_prompt_parses_json(monkeypatch):
 
 def test_validate_prompt_handles_bad_json(monkeypatch):
     response = types.SimpleNamespace(text="not json")
-    model = GeminiModel(api_key="x")
+    model = GeminiModel(api_key="x", intent_cache_ttl=None)
     model.client = DummyClient(response)
 
     valid, reason = model.validate_prompt("add a bird")
@@ -39,7 +39,7 @@ def test_validate_prompt_handles_bad_json(monkeypatch):
 def test_generate_image_extracts_bytes(monkeypatch, tmp_path):
     part = types.SimpleNamespace(inline_data=types.SimpleNamespace(data=b"img"))
     response = types.SimpleNamespace(parts=[part])
-    model = GeminiModel(api_key="x")
+    model = GeminiModel(api_key="x", intent_cache_ttl=None)
     model.client = DummyClient(response)
 
     path = tmp_path / "current.png"
