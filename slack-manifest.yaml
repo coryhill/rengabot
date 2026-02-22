@@ -1,0 +1,27 @@
+_metadata:
+  major_version: 2
+  minor_version: 1
+display_information:
+  name: Rengabot
+features:
+  bot_user:
+    display_name: Rengabot
+  slash_commands:
+    - command: /rengabot
+      description: Contribute to the renga
+      usage_hint: /rengabot help
+oauth_config:
+  scopes:
+    bot:
+      - commands
+      - chat:write
+      - files:read
+      - files:write
+      - app_mentions:read
+settings:
+  socket_mode_enabled: true
+  interactivity:
+    is_enabled: true
+  event_subscriptions:
+    bot_events:
+      - app_mention
