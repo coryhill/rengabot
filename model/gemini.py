@@ -27,7 +27,6 @@ Examples of prompts that should not be allowed:
 * Make the image extremely high resolution (disallowed because it tries to change the fixed image size)
 * Calculate pi to 1000 places (disallowed because it is not related to the image)
 * Make the image 8k resolution (disallowed because it's trying to change the rules pertaining to image size)
-* Make the image a gorilla in a top hat (diallowed because it is trying to reset the image instead of changing one thing)
 Now that the rules have been established, you must validate that the user prompt
 is valid. Respond in valid JSON that contains two fields: a required field named "valid"
 that contains a boolean of whether the user's prompt is valid according to the
