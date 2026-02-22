@@ -9,6 +9,8 @@ from game.service import (
     ChangeInProgressError,
     GenerationError,
     InvalidPromptError,
+    InvalidImageError,
+    ImageTooLargeError,
     NoImageError,
 )
 
@@ -182,14 +184,30 @@ class DiscordMessenger(ChatMessenger):
                 ext = "png"
             dest_path = os.path.join(dest_dir, f"current.{ext}")
             await image.save(dest_path)
-            self.rengabot.service.save_image_file(
-                "discord",
-                guild_id,
-                channel_id,
-                str(interaction.user.id),
-                dest_path,
-                ext,
-            )
+            try:
+                self.rengabot.service.save_image_file(
+                    "discord",
+                    guild_id,
+                    channel_id,
+                    str(interaction.user.id),
+                    dest_path,
+                    ext,
+                )
+            except ImageTooLargeError as e:
+                await interaction.followup.send(
+                    (
+                        "Image is too large. Max resolution is "
+                        f"{e.max_width}x{e.max_height}px, received {e.width}x{e.height}px."
+                    ),
+                    ephemeral=True,
+                )
+                return
+            except InvalidImageError:
+                await interaction.followup.send(
+                    "Uploaded file could not be opened as an image.",
+                    ephemeral=True,
+                )
+                return
 
             await interaction.followup.send(
                 f"The renga has been reset: {description or '(no description)'}",

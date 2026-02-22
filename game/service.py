@@ -1,6 +1,7 @@
 import logging
 import os
 from typing import Optional
+from PIL import Image
 
 
 class NoImageError(Exception):
@@ -21,10 +22,27 @@ class ChangeInProgressError(Exception):
     pass
 
 
+class ImageTooLargeError(Exception):
+    def __init__(self, width: int, height: int, max_width: int, max_height: int):
+        super().__init__(
+            f"image is too large: {width}x{height}, max is {max_width}x{max_height}"
+        )
+        self.width = width
+        self.height = height
+        self.max_width = max_width
+        self.max_height = max_height
+
+
+class InvalidImageError(Exception):
+    pass
+
+
 class GameService:
     NO_IMAGE_MESSAGE = "No image has been set yet. An admin must run `/rengabot set-image` first."
     GENERATION_ERROR_MESSAGE = "Image generation failed. Please try again."
     CHANGE_IN_PROGRESS_MESSAGE = "Someone else beat you to it"
+    MAX_IMAGE_WIDTH = 1024
+    MAX_IMAGE_HEIGHT = 1024
 
     def __init__(self, model, uploads_dir: Optional[str] = None):
         self.model = model
@@ -84,6 +102,7 @@ class GameService:
     ) -> str:
         if ext not in ("png", "jpg", "jpeg"):
             ext = "png"
+        self._validate_image_size(src_path)
         channel_dir = self.channel_dir(platform, workspace_id, channel_id)
         os.makedirs(channel_dir, exist_ok=True)
         dest_path = os.path.join(channel_dir, f"current.{ext}")
@@ -100,6 +119,17 @@ class GameService:
             },
         )
         return dest_path
+
+    def _validate_image_size(self, path: str) -> None:
+        try:
+            with Image.open(path) as img:
+                width, height = img.size
+        except Exception as e:
+            raise InvalidImageError("file could not be opened as an image") from e
+        max_width = self.MAX_IMAGE_WIDTH
+        max_height = self.MAX_IMAGE_HEIGHT
+        if width > max_width or height > max_height:
+            raise ImageTooLargeError(width, height, max_width, max_height)
 
     def _change_lock_path(self, platform: str, workspace_id: str, channel_id: str) -> str:
         channel_dir = self.channel_dir(platform, workspace_id, channel_id)

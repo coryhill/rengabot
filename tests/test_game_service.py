@@ -1,10 +1,12 @@
 import os
 
 import pytest
+from PIL import Image
 
 from game.service import (
     ChangeInProgressError,
     GameService,
+    ImageTooLargeError,
     InvalidPromptError,
     NoImageError,
 )
@@ -37,6 +39,15 @@ def test_change_image_invalid_prompt(tmp_path, monkeypatch):
     with pytest.raises(InvalidPromptError) as exc:
         svc.change_image("slack", "T1", "C1", "U2", "add a bird")
     assert "too many changes" in str(exc.value)
+
+
+def test_save_image_file_rejects_large_images(tmp_path, monkeypatch):
+    monkeypatch.setenv("UPLOADS_DIR", str(tmp_path))
+    svc = GameService(DummyModel())
+    src_path = tmp_path / "too_large.png"
+    Image.new("RGB", (1025, 1024), color=(0, 0, 0)).save(src_path)
+    with pytest.raises(ImageTooLargeError):
+        svc.save_image_file("slack", "T1", "C1", "U1", str(src_path), "png")
 
 
 def test_change_image_saves_new_image(tmp_path, monkeypatch):

@@ -10,6 +10,8 @@ from game.service import (
     ChangeInProgressError,
     GenerationError,
     InvalidPromptError,
+    InvalidImageError,
+    ImageTooLargeError,
     NoImageError,
 )
 
@@ -276,9 +278,27 @@ class SlackMessenger(ChatMessenger):
         except Exception as e:
             logger.exception("Local save failed: %s", e)
             
-        self.rengabot.service.save_image_file(
-            "slack", team_id, channel_id, user_id, local_path, file_ext
-        )
+        try:
+            self.rengabot.service.save_image_file(
+                "slack", team_id, channel_id, user_id, local_path, file_ext
+            )
+        except ImageTooLargeError as e:
+            await client.chat_postEphemeral(
+                channel=channel_id,
+                user=user_id,
+                text=(
+                    "Image is too large. Max resolution is "
+                    f"{e.max_width}x{e.max_height}px, received {e.width}x{e.height}px."
+                ),
+            )
+            return
+        except InvalidImageError:
+            await client.chat_postEphemeral(
+                channel=channel_id,
+                user=user_id,
+                text="Uploaded file could not be opened as an image.",
+            )
+            return
 
         # Share to slack channel
         await client.chat_postMessage(
