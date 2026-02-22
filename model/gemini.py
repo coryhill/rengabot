@@ -48,6 +48,7 @@ class GeminiModel(AIModel):
             raise Exception("no API key set for Gemini")
         self.intent_model = intent_model
         self.image_model = image_model
+        self.client = genai.Client(api_key=self.api_key)
         
     def validate_prompt(self, prompt: str) -> Tuple[bool, str]:
         """Make sure the user's prompt obeys the rules of the game. We do this
@@ -55,9 +56,7 @@ class GeminiModel(AIModel):
         Return a tuple of bool, str where the bool is whether the prompt
         was valid or not, and the string is what was wrong with the prompt
         if it wasn't deemed valid."""
-        client = genai.Client(api_key=self.api_key)
-
-        response = client.models.generate_content(
+        response = self.client.models.generate_content(
             model=self.intent_model,
             contents=VALIDATION_PROMPT + prompt,
             config=types.GenerateContentConfig(
@@ -72,13 +71,12 @@ class GeminiModel(AIModel):
         return (r.get("valid", False), r.get("reason"))
 
     def generate_image(self, prompt: str, image_path: str) -> bytes:
-        client = genai.Client(api_key=self.api_key)
         with open(image_path, "rb") as f:
             image_bytes = f.read()
         mime_type = _guess_mime_type(image_path)
         image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
         try:
-            response = client.models.generate_content(
+            response = self.client.models.generate_content(
                 model=self.image_model,
                 contents=[prompt, image_part],
                 config=types.GenerateContentConfig(
@@ -88,7 +86,7 @@ class GeminiModel(AIModel):
         except Exception as e:
             error_text = str(e)
             if "not found" in error_text.lower() or "not supported" in error_text.lower():
-                candidates = _list_image_models(client)
+                candidates = _list_image_models(self.client)
                 if candidates:
                     raise Exception(
                         "Image model not available. Configure a working image model. "

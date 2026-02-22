@@ -1,10 +1,11 @@
+import asyncio
 import json
 import os
 import requests
 from typing import Optional
 from .base import ChatMessenger, register
-from slack_bolt import App
-from slack_bolt.adapter.socket_mode import SocketModeHandler
+from slack_bolt.async_app import AsyncApp
+from slack_bolt.adapter.socket_mode.aiohttp import AsyncSocketModeHandler
 
 HELP_MESSAGE = """Available subcommands:
 - *change* - make a change to the current image
@@ -35,7 +36,7 @@ class SlackMessenger(ChatMessenger):
         else:
             raise Exception("no app token set for Slack")
         
-        self.app = App(token=self.bot_token)
+        self.app = AsyncApp(token=self.bot_token)
         self.register_listeners()
 
     def _is_admin(self, user_id: str) -> bool:
@@ -58,29 +59,71 @@ class SlackMessenger(ChatMessenger):
         self.app.command("/rengabot")(self.handle_slash_cmd)
         self.app.view("upload_modal")(self.handle_set_image_upload)
     
-    def handle_mention(self, event, say):
-        say("Use the /rengabot slash command!")
+    async def handle_mention(self, event, say):
+        await say("Use the /rengabot slash command!")
 
-    def handle_slash_cmd(self, ack, body, respond, client, logger):
-        ack()
+    async def _handle_change_async(
+        self,
+        client,
+        logger,
+        user_id: str,
+        team_id: str,
+        channel_id: str,
+        prompt: str,
+        current_path: str,
+    ):
+        is_valid, reason = await asyncio.to_thread(self.rengabot.model.validate_prompt, prompt)
+        if not is_valid:
+            await client.chat_postEphemeral(
+                channel=channel_id,
+                user=user_id,
+                text=f"Disallowed change: {reason or 'prompt does not match the rules.'}",
+            )
+            return
+        try:
+            image_bytes = await asyncio.to_thread(
+                self.rengabot.model.generate_image, prompt, current_path
+            )
+        except Exception as e:
+            logger.exception("Image generation failed: %s", e)
+            await client.chat_postEphemeral(
+                channel=channel_id,
+                user=user_id,
+                text="Image generation failed. Please try again.",
+            )
+            return
+        channel_dir = self._channel_dir(team_id, channel_id)
+        os.makedirs(channel_dir, exist_ok=True)
+        next_path = os.path.join(channel_dir, "current.png")
+        with open(next_path, "wb") as f:
+            f.write(image_bytes)
+        await client.files_upload_v2(
+            channel=channel_id,
+            file=next_path,
+            filename="renga.png",
+            initial_comment=f"Renga update: {prompt}",
+        )
+
+    async def handle_slash_cmd(self, ack, body, respond, client, logger):
+        await ack()
         user_id = body["user_id"]
         text = body["text"]
         
         # See which subcommand they're using
         fields = text.split()
         if len(fields) == 0:
-            respond(text=HELP_MESSAGE, response_type="ephemeral")
+            await respond(text=HELP_MESSAGE, response_type="ephemeral")
             return
             
         match fields[0]:
             case "help":
-                respond(
+                await respond(
                     text=HELP_MESSAGE,
                     response_type="ephemeral"
                 )
             case "change":
                 if len(fields) == 1:
-                    respond(
+                    await respond(
                         text=CHANGE_USAGE,
                         response_type="ephemeral"
                     )
@@ -90,45 +133,26 @@ class SlackMessenger(ChatMessenger):
                 team_id = body.get("team_id", "")
                 current_path = self._get_current_image_path(team_id, channel_id)
                 if not current_path:
-                    respond(
+                    await respond(
                         text="No image has been set yet. An admin must run `/rengabot set-image` first.",
                         response_type="ephemeral",
                     )
                     return
-                respond(text="Working on it...", response_type="ephemeral")
-                is_valid, reason = self.rengabot.model.validate_prompt(text)
-                if not is_valid:
-                    respond(
-                        text=f"Disallowed change: {reason or 'prompt does not match the rules.'}",
-                        response_type="ephemeral",
+                await respond(text="Working on it...", response_type="ephemeral")
+                asyncio.create_task(
+                    self._handle_change_async(
+                        client, logger, user_id, team_id, channel_id, text, current_path
                     )
-                    return
-                try:
-                    image_bytes = self.rengabot.model.generate_image(text, current_path)
-                except Exception as e:
-                    logger.exception("Image generation failed: %s", e)
-                    respond(text="Image generation failed. Please try again.", response_type="ephemeral")
-                    return
-                channel_dir = self._channel_dir(team_id, channel_id)
-                os.makedirs(channel_dir, exist_ok=True)
-                next_path = os.path.join(channel_dir, "current.png")
-                with open(next_path, "wb") as f:
-                    f.write(image_bytes)
-                client.files_upload_v2(
-                    channel=channel_id,
-                    file=next_path,
-                    filename="renga.png",
-                    initial_comment=f"Renga update: {text}",
                 )
             case "set-image":
                 if not self._is_admin(user_id):
-                    respond(
+                    await respond(
                         text="Only admins can set the image.",
                         response_type="ephemeral",
                     )
                     return
                 channel_id = body.get("channel_id", "")
-                client.views_open(
+                await client.views_open(
                     trigger_id=body["trigger_id"],
                     view={
                         "type": "modal",
@@ -170,19 +194,19 @@ class SlackMessenger(ChatMessenger):
                 team_id = body.get("team_id", "")
                 current_path = self._get_current_image_path(team_id, channel_id)
                 if not current_path:
-                    respond(
+                    await respond(
                         text="No image has been set yet. An admin must run `/rengabot set-image` first.",
                         response_type="ephemeral",
                     )
                     return
-                client.files_upload_v2(
+                await client.files_upload_v2(
                     channel=channel_id,
                     file=current_path,
                     filename="renga.png",
                     initial_comment="Current renga image:",
                 )
 
-    def handle_set_image_upload(self, ack, body, client, logger):
+    async def handle_set_image_upload(self, ack, body, client, logger):
         private_metadata = json.loads(body["view"]["private_metadata"])
         channel_id = private_metadata["channel_id"]
         team_id = body["team"]["id"]
@@ -195,11 +219,11 @@ class SlackMessenger(ChatMessenger):
             files = []
 
         if not files:
-            ack(response_action="errors", errors={"file_block": "Please attach a file before submitting."})
+            await ack(response_action="errors", errors={"file_block": "Please attach a file before submitting."})
             return
-        ack()
+        await ack()
         if not self._is_admin(user_id):
-            client.chat_postEphemeral(
+            await client.chat_postEphemeral(
                 channel=channel_id,
                 user=user_id,
                 text="Only admins can set the image.",
@@ -209,7 +233,7 @@ class SlackMessenger(ChatMessenger):
         description = state_values["message_input_block"]["message_input_element"]["value"]
 
         file_id = files[0]["id"]
-        file_info = client.files_info(file=file_id)
+        file_info = await client.files_info(file=file_id)
         f = file_info["file"]
         file_permalink = f["permalink"]
         file_ext = (f.get("filetype") or "png").lower()
@@ -243,10 +267,13 @@ class SlackMessenger(ChatMessenger):
             logger.exception("Local save failed: %s", e)
             
         # Share to slack channel
-        client.chat_postMessage(
+        await client.chat_postMessage(
             channel=channel_id,
             text=f"The renga has been reset: {description}\n{file_permalink}"
         )
 
     def run(self):
-        SocketModeHandler(self.app, self.app_token).start()
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        handler = AsyncSocketModeHandler(self.app, self.app_token, loop=loop)
+        loop.run_until_complete(handler.start_async())
