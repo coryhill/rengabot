@@ -148,19 +148,19 @@ class DiscordMessenger(ChatMessenger):
                 )
             except NoImageError:
                 await interaction.followup.send(
-                    "No image has been set yet. An admin must run `/rengabot set-image` first.",
+                    self.rengabot.service.NO_IMAGE_MESSAGE,
                     ephemeral=True,
                 )
                 return
             except InvalidPromptError as e:
                 await interaction.followup.send(
-                    f"Disallowed change: {e.reason or 'prompt does not match the rules.'}",
+                    self.rengabot.service.format_invalid_prompt(e.reason),
                     ephemeral=True,
                 )
                 return
             except GenerationError:
                 await interaction.followup.send(
-                    "Image generation failed. Please try again.",
+                    self.rengabot.service.GENERATION_ERROR_MESSAGE,
                     ephemeral=True,
                 )
                 return
@@ -185,7 +185,7 @@ class DiscordMessenger(ChatMessenger):
                 )
             except NoImageError:
                 await interaction.followup.send(
-                    "No image has been set yet. An admin must run `/rengabot set-image` first.",
+                    self.rengabot.service.NO_IMAGE_MESSAGE,
                     ephemeral=True,
                 )
                 return

@@ -12,13 +12,6 @@ def load_config(path="config.yaml"):
     with open(path, "r") as f:
         return yaml.safe_load(f)
     
-"""
-class MessengerThread(threading.Thread):
-    def __init__(self, chat_messenger: ChatMessenger):
-        super().__init__()
-        self.messenger = chat_messenger
-"""
-
 class Rengabot:
     def __init__(self, config):
         self.config = config

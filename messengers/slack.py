@@ -70,14 +70,14 @@ class SlackMessenger(ChatMessenger):
             await client.chat_postEphemeral(
                 channel=channel_id,
                 user=user_id,
-                text="No image has been set yet. An admin must run `/rengabot set-image` first.",
+                text=self.rengabot.service.NO_IMAGE_MESSAGE,
             )
             return
         except InvalidPromptError as e:
             await client.chat_postEphemeral(
                 channel=channel_id,
                 user=user_id,
-                text=f"Disallowed change: {e.reason or 'prompt does not match the rules.'}",
+                text=self.rengabot.service.format_invalid_prompt(e.reason),
             )
             return
         except GenerationError as e:
@@ -85,7 +85,7 @@ class SlackMessenger(ChatMessenger):
             await client.chat_postEphemeral(
                 channel=channel_id,
                 user=user_id,
-                text="Image generation failed. Please try again.",
+                text=self.rengabot.service.GENERATION_ERROR_MESSAGE,
             )
             return
         await client.files_upload_v2(
@@ -125,7 +125,7 @@ class SlackMessenger(ChatMessenger):
                 current_path = self._get_current_image_path(team_id, channel_id)
                 if not current_path:
                     await respond(
-                        text="No image has been set yet. An admin must run `/rengabot set-image` first.",
+                        text=self.rengabot.service.NO_IMAGE_MESSAGE,
                         response_type="ephemeral",
                     )
                     return
@@ -186,7 +186,7 @@ class SlackMessenger(ChatMessenger):
                 current_path = self._get_current_image_path(team_id, channel_id)
                 if not current_path:
                     await respond(
-                        text="No image has been set yet. An admin must run `/rengabot set-image` first.",
+                        text=self.rengabot.service.NO_IMAGE_MESSAGE,
                         response_type="ephemeral",
                     )
                     return

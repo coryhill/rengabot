@@ -5,6 +5,7 @@ import os
 import pytest
 
 from messengers.slack import SlackMessenger
+from game.service import GameService
 
 
 class DummyModel:
@@ -27,6 +28,7 @@ class DummyModel:
 class DummyRengabot:
     def __init__(self, model):
         self.model = model
+        self.service = GameService(model)
 
 
 class DummyClient:
@@ -69,6 +71,22 @@ def _make_slack(config, model):
 @pytest.fixture(autouse=True)
 def _disable_slack_listener_registration(monkeypatch):
     monkeypatch.setattr(SlackMessenger, "register_listeners", lambda self: None)
+
+
+@pytest.fixture(autouse=True)
+async def _await_background_tasks(monkeypatch):
+    tasks = []
+    orig = asyncio.create_task
+
+    def _wrap(coro):
+        task = orig(coro)
+        tasks.append(task)
+        return task
+
+    monkeypatch.setattr(asyncio, "create_task", _wrap)
+    yield
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @pytest.mark.asyncio
@@ -133,10 +151,6 @@ async def test_slack_change_valid_prompt_uploads(tmp_path, monkeypatch):
     async def _run(*args, **kwargs):
         called["ok"] = True
     monkeypatch.setattr(sm, "_handle_change_async", _run)
-    def _run_coro(coro):
-        asyncio.get_event_loop().create_task(coro)
-        return None
-    monkeypatch.setattr(asyncio, "create_task", _run_coro)
     await sm.handle_slash_cmd(ack, body, respond, client, types.SimpleNamespace(exception=lambda *a, **k: None))
     await asyncio.sleep(0)
     assert called.get("ok") is True

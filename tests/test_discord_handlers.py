@@ -4,6 +4,7 @@ import types
 import pytest
 
 from messengers.discord import DiscordMessenger
+from game.service import GameService
 
 
 class DummyModel:
@@ -22,6 +23,7 @@ class DummyModel:
 class DummyRengabot:
     def __init__(self, model):
         self.model = model
+        self.service = GameService(model)
 
 
 def _make_discord(tmp_path):

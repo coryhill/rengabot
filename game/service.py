@@ -17,6 +17,9 @@ class GenerationError(Exception):
 
 
 class GameService:
+    NO_IMAGE_MESSAGE = "No image has been set yet. An admin must run `/rengabot set-image` first."
+    GENERATION_ERROR_MESSAGE = "Image generation failed. Please try again."
+
     def __init__(self, model, uploads_dir: Optional[str] = None):
         self.model = model
         self.uploads_dir = uploads_dir or os.environ.get("UPLOADS_DIR", "/tmp")
@@ -89,3 +92,7 @@ class GameService:
         return self.save_image_bytes(
             platform, workspace_id, channel_id, image_bytes, ext="png"
         )
+
+    @staticmethod
+    def format_invalid_prompt(reason: Optional[str]) -> str:
+        return f"Disallowed change: {reason or 'prompt does not match the rules.'}"
