@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Optional
 
@@ -28,6 +29,7 @@ class GameService:
     def __init__(self, model, uploads_dir: Optional[str] = None):
         self.model = model
         self.uploads_dir = uploads_dir or os.environ.get("UPLOADS_DIR", "/tmp")
+        self._logger = logging.getLogger(__name__)
 
     def channel_dir(self, platform: str, workspace_id: str, channel_id: str) -> str:
         return os.path.join(self.uploads_dir, platform, workspace_id, channel_id)
@@ -47,6 +49,7 @@ class GameService:
         platform: str,
         workspace_id: str,
         channel_id: str,
+        user_id: str,
         image_bytes: bytes,
         ext: str = "png",
     ) -> str:
@@ -57,6 +60,17 @@ class GameService:
         path = os.path.join(channel_dir, f"current.{ext}")
         with open(path, "wb") as f:
             f.write(image_bytes)
+        self._logger.info(
+            "Saved renga image bytes",
+            extra={
+                "platform": platform,
+                "workspace_id": workspace_id,
+                "channel_id": channel_id,
+                "user_id": user_id,
+                "ext": ext,
+                "path": path,
+            },
+        )
         return path
 
     def save_image_file(
@@ -64,6 +78,7 @@ class GameService:
         platform: str,
         workspace_id: str,
         channel_id: str,
+        user_id: str,
         src_path: str,
         ext: str = "png",
     ) -> str:
@@ -73,6 +88,17 @@ class GameService:
         os.makedirs(channel_dir, exist_ok=True)
         dest_path = os.path.join(channel_dir, f"current.{ext}")
         os.replace(src_path, dest_path)
+        self._logger.info(
+            "Saved renga image file",
+            extra={
+                "platform": platform,
+                "workspace_id": workspace_id,
+                "channel_id": channel_id,
+                "user_id": user_id,
+                "ext": ext,
+                "path": dest_path,
+            },
+        )
         return dest_path
 
     def _change_lock_path(self, platform: str, workspace_id: str, channel_id: str) -> str:
@@ -119,11 +145,34 @@ class GameService:
         return path
 
     def change_image(
-        self, platform: str, workspace_id: str, channel_id: str, prompt: str
+        self,
+        platform: str,
+        workspace_id: str,
+        channel_id: str,
+        user_id: str,
+        prompt: str,
     ) -> str:
         lock = self._acquire_change_lock(platform, workspace_id, channel_id)
         if not lock:
+            self._logger.info(
+                "Change image rejected: lock held",
+                extra={
+                    "platform": platform,
+                    "workspace_id": workspace_id,
+                    "channel_id": channel_id,
+                    "user_id": user_id,
+                },
+            )
             raise ChangeInProgressError()
+        self._logger.info(
+            "Change image requested",
+            extra={
+                "platform": platform,
+                "workspace_id": workspace_id,
+                "channel_id": channel_id,
+                "user_id": user_id,
+            },
+        )
         current_path = self.get_current_image_path(platform, workspace_id, channel_id)
         try:
             if not current_path:
@@ -135,9 +184,25 @@ class GameService:
                 image_bytes = self.model.generate_image(prompt, current_path)
             except Exception as e:
                 raise GenerationError(str(e)) from e
-            return self.save_image_bytes(
-                platform, workspace_id, channel_id, image_bytes, ext="png"
+            new_path = self.save_image_bytes(
+                platform,
+                workspace_id,
+                channel_id,
+                user_id,
+                image_bytes,
+                ext="png",
             )
+            self._logger.info(
+                "Change image completed",
+                extra={
+                    "platform": platform,
+                    "workspace_id": workspace_id,
+                    "channel_id": channel_id,
+                    "user_id": user_id,
+                    "path": new_path,
+                },
+            )
+            return new_path
         finally:
             self._release_change_lock(lock)
 

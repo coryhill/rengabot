@@ -94,7 +94,12 @@ class SlackMessenger(ChatMessenger):
     ):
         try:
             next_path = await asyncio.to_thread(
-                self.rengabot.service.change_image, "slack", team_id, channel_id, prompt
+                self.rengabot.service.change_image,
+                "slack",
+                team_id,
+                channel_id,
+                user_id,
+                prompt,
             )
         except NoImageError:
             await client.chat_postMessage(
@@ -272,7 +277,7 @@ class SlackMessenger(ChatMessenger):
             logger.exception("Local save failed: %s", e)
             
         self.rengabot.service.save_image_file(
-            "slack", team_id, channel_id, local_path, file_ext
+            "slack", team_id, channel_id, user_id, local_path, file_ext
         )
 
         # Share to slack channel

@@ -108,7 +108,9 @@ async def test_slack_change_invalid_prompt(tmp_path, monkeypatch):
     sm = _make_slack(config, model)
 
     monkeypatch.setenv("UPLOADS_DIR", str(tmp_path))
-    sm.rengabot.service.save_image_bytes("slack", "T1", "C1", b"base", ext="png")
+    sm.rengabot.service.save_image_bytes(
+        "slack", "T1", "C1", "U1", b"base", ext="png"
+    )
 
     client = DummyClient()
     say = DummySay()
@@ -137,7 +139,9 @@ async def test_slack_change_validation_short_circuit(tmp_path, monkeypatch):
     sm = _make_slack(config, model)
 
     monkeypatch.setenv("UPLOADS_DIR", str(tmp_path))
-    sm.rengabot.service.save_image_bytes("slack", "T1", "C1", b"base", ext="png")
+    sm.rengabot.service.save_image_bytes(
+        "slack", "T1", "C1", "U1", b"base", ext="png"
+    )
 
     client = DummyClient()
     await sm._handle_change_async(
@@ -161,7 +165,9 @@ async def test_slack_change_valid_prompt_uploads(tmp_path, monkeypatch):
     sm = _make_slack(config, model)
 
     monkeypatch.setenv("UPLOADS_DIR", str(tmp_path))
-    sm.rengabot.service.save_image_bytes("slack", "T1", "C1", b"base", ext="png")
+    sm.rengabot.service.save_image_bytes(
+        "slack", "T1", "C1", "U1", b"base", ext="png"
+    )
 
     client = DummyClient()
     say = DummySay()

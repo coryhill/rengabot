@@ -96,6 +96,7 @@ class DiscordMessenger(ChatMessenger):
                 "discord",
                 guild_id,
                 channel_id,
+                str(message.author.id),
                 prompt,
             )
         except NoImageError:
@@ -182,7 +183,12 @@ class DiscordMessenger(ChatMessenger):
             dest_path = os.path.join(dest_dir, f"current.{ext}")
             await image.save(dest_path)
             self.rengabot.service.save_image_file(
-                "discord", guild_id, channel_id, dest_path, ext
+                "discord",
+                guild_id,
+                channel_id,
+                str(interaction.user.id),
+                dest_path,
+                ext,
             )
 
             await interaction.followup.send(

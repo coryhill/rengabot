@@ -8,6 +8,20 @@ from messengers import ChatMessenger, initialize_messenger
 from model import load_model
 from game.service import GameService
 
+class ContextFormatter(logging.Formatter):
+    _fields = ("platform", "workspace_id", "channel_id", "user_id", "path", "ext")
+
+    def format(self, record: logging.LogRecord) -> str:
+        base = super().format(record)
+        parts = []
+        for key in self._fields:
+            value = getattr(record, key, None)
+            if value:
+                parts.append(f"{key}={value}")
+        if not parts:
+            return base
+        return f"{base} {' '.join(parts)}"
+
 def load_config(path="config.yaml"):
     with open(path, "r") as f:
         return yaml.safe_load(f)
@@ -40,5 +54,11 @@ class Rengabot:
 if __name__ == '__main__':
     config = load_config()
     logging.basicConfig(level=logging.INFO)
+    service_handler = logging.StreamHandler()
+    service_formatter = ContextFormatter("%(levelname)s:%(name)s:%(message)s")
+    service_handler.setFormatter(service_formatter)
+    service_logger = logging.getLogger("game.service")
+    service_logger.addHandler(service_handler)
+    service_logger.propagate = False
     rengabot = Rengabot(config)
     rengabot.run()
