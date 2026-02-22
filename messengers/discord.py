@@ -4,7 +4,12 @@ from typing import Optional
 
 import discord
 from discord import app_commands
-from game.service import GenerationError, InvalidPromptError, NoImageError
+from game.service import (
+    ChangeInProgressError,
+    GenerationError,
+    InvalidPromptError,
+    NoImageError,
+)
 
 from .base import ChatMessenger, register
 
@@ -155,6 +160,12 @@ class DiscordMessenger(ChatMessenger):
             except InvalidPromptError as e:
                 await interaction.followup.send(
                     self.rengabot.service.format_invalid_prompt(e.reason),
+                    ephemeral=True,
+                )
+                return
+            except ChangeInProgressError:
+                await interaction.followup.send(
+                    self.rengabot.service.CHANGE_IN_PROGRESS_MESSAGE,
                     ephemeral=True,
                 )
                 return

@@ -5,7 +5,12 @@ import requests
 from .base import ChatMessenger, register
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.aiohttp import AsyncSocketModeHandler
-from game.service import GenerationError, InvalidPromptError, NoImageError
+from game.service import (
+    ChangeInProgressError,
+    GenerationError,
+    InvalidPromptError,
+    NoImageError,
+)
 
 HELP_MESSAGE = """Available subcommands:
 - *change* - make a change to the current image
@@ -78,6 +83,13 @@ class SlackMessenger(ChatMessenger):
                 channel=channel_id,
                 user=user_id,
                 text=self.rengabot.service.format_invalid_prompt(e.reason),
+            )
+            return
+        except ChangeInProgressError:
+            await client.chat_postEphemeral(
+                channel=channel_id,
+                user=user_id,
+                text=self.rengabot.service.CHANGE_IN_PROGRESS_MESSAGE,
             )
             return
         except GenerationError as e:

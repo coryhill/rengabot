@@ -16,9 +16,14 @@ class GenerationError(Exception):
     pass
 
 
+class ChangeInProgressError(Exception):
+    pass
+
+
 class GameService:
     NO_IMAGE_MESSAGE = "No image has been set yet. An admin must run `/rengabot set-image` first."
     GENERATION_ERROR_MESSAGE = "Image generation failed. Please try again."
+    CHANGE_IN_PROGRESS_MESSAGE = "Someone else beat you to it"
 
     def __init__(self, model, uploads_dir: Optional[str] = None):
         self.model = model
@@ -70,6 +75,43 @@ class GameService:
         os.replace(src_path, dest_path)
         return dest_path
 
+    def _change_lock_path(self, platform: str, workspace_id: str, channel_id: str) -> str:
+        channel_dir = self.channel_dir(platform, workspace_id, channel_id)
+        return os.path.join(channel_dir, ".change.lock")
+
+    def _acquire_change_lock(
+        self, platform: str, workspace_id: str, channel_id: str
+    ) -> Optional[tuple[int, str]]:
+        channel_dir = self.channel_dir(platform, workspace_id, channel_id)
+        os.makedirs(channel_dir, exist_ok=True)
+        lock_path = self._change_lock_path(platform, workspace_id, channel_id)
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            return None
+        try:
+            os.write(fd, str(os.getpid()).encode("ascii"))
+        except Exception:
+            os.close(fd)
+            try:
+                os.unlink(lock_path)
+            except FileNotFoundError:
+                pass
+            raise
+        return (fd, lock_path)
+
+    def _release_change_lock(self, lock: Optional[tuple[int, str]]) -> None:
+        if not lock:
+            return
+        fd, lock_path = lock
+        try:
+            os.close(fd)
+        finally:
+            try:
+                os.unlink(lock_path)
+            except FileNotFoundError:
+                pass
+
     def show_image(self, platform: str, workspace_id: str, channel_id: str) -> str:
         path = self.get_current_image_path(platform, workspace_id, channel_id)
         if not path:
@@ -79,19 +121,25 @@ class GameService:
     def change_image(
         self, platform: str, workspace_id: str, channel_id: str, prompt: str
     ) -> str:
+        lock = self._acquire_change_lock(platform, workspace_id, channel_id)
+        if not lock:
+            raise ChangeInProgressError()
         current_path = self.get_current_image_path(platform, workspace_id, channel_id)
-        if not current_path:
-            raise NoImageError()
-        valid, reason = self.model.validate_prompt(prompt)
-        if not valid:
-            raise InvalidPromptError(reason)
         try:
-            image_bytes = self.model.generate_image(prompt, current_path)
-        except Exception as e:
-            raise GenerationError(str(e)) from e
-        return self.save_image_bytes(
-            platform, workspace_id, channel_id, image_bytes, ext="png"
-        )
+            if not current_path:
+                raise NoImageError()
+            valid, reason = self.model.validate_prompt(prompt)
+            if not valid:
+                raise InvalidPromptError(reason)
+            try:
+                image_bytes = self.model.generate_image(prompt, current_path)
+            except Exception as e:
+                raise GenerationError(str(e)) from e
+            return self.save_image_bytes(
+                platform, workspace_id, channel_id, image_bytes, ext="png"
+            )
+        finally:
+            self._release_change_lock(lock)
 
     @staticmethod
     def format_invalid_prompt(reason: Optional[str]) -> str:
