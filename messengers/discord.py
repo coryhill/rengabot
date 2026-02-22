@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from typing import Optional
 
 import discord
@@ -27,6 +28,8 @@ class DiscordMessenger(ChatMessenger):
             raise Exception("no bot token set for Discord")
 
         intents = discord.Intents.default()
+        intents.message_content = True
+        intents.messages = True
         self.client = discord.Client(intents=intents)
         self.tree = app_commands.CommandTree(self.client)
         self.guild_id = config.get("guild_id")
@@ -41,6 +44,30 @@ class DiscordMessenger(ChatMessenger):
             else:
                 await self.tree.sync()
 
+        @self.client.event
+        async def on_message(message: discord.Message):
+            if message.author.bot:
+                return
+            if not message.guild:
+                await message.channel.send(
+                    "Please mention me in a channel to request an image change."
+                )
+                return
+            if not self.client.user:
+                return
+            if self.client.user not in message.mentions:
+                return
+
+            prompt = self._extract_prompt_from_mention(message.content or "")
+            if not prompt:
+                await message.channel.send(
+                    "To make a change, mention me with your request. Example: @Rengabot add a bird."
+                )
+                return
+
+            await message.channel.send("Working on it...")
+            asyncio.create_task(self._handle_change_message(message, prompt))
+
     def _is_admin(self, user: discord.abc.User) -> bool:
         if str(user.id) in self.config.get("admins", []):
             return True
@@ -54,6 +81,46 @@ class DiscordMessenger(ChatMessenger):
     def _get_current_image_path(self, guild_id: str, channel_id: str) -> Optional[str]:
         return self.rengabot.service.get_current_image_path("discord", guild_id, channel_id)
 
+    def _extract_prompt_from_mention(self, text: str) -> str:
+        if not text:
+            return ""
+        prompt = re.sub(r"<@!?\\d+>", "", text)
+        return " ".join(prompt.replace("\n", " ").split()).lstrip(" ,:-").strip()
+
+    async def _handle_change_message(self, message: discord.Message, prompt: str) -> None:
+        guild_id = str(message.guild.id)
+        channel_id = str(message.channel.id)
+        try:
+            next_path = await asyncio.to_thread(
+                self.rengabot.service.change_image,
+                "discord",
+                guild_id,
+                channel_id,
+                prompt,
+            )
+        except NoImageError:
+            await message.channel.send(self.rengabot.service.NO_IMAGE_MESSAGE)
+            return
+        except InvalidPromptError as e:
+            await message.channel.send(
+                self.rengabot.service.format_invalid_prompt(e.reason)
+            )
+            return
+        except ChangeInProgressError:
+            await message.channel.send(
+                self.rengabot.service.CHANGE_IN_PROGRESS_MESSAGE
+            )
+            return
+        except GenerationError:
+            await message.channel.send(
+                self.rengabot.service.GENERATION_ERROR_MESSAGE
+            )
+            return
+
+        await message.channel.send(
+            file=discord.File(next_path, filename="renga.png"),
+        )
+
     def _register_commands(self):
         guild = discord.Object(id=int(self.guild_id)) if self.guild_id else None
         group = app_commands.Group(
@@ -65,7 +132,8 @@ class DiscordMessenger(ChatMessenger):
         @group.command(name="help", description="Show Rengabot help")
         async def rengabot_help(interaction: discord.Interaction):
             await interaction.response.send_message(
-                "Available subcommands: /rengabot change, /rengabot set-image, /rengabot show-image",
+                "Available subcommands: /rengabot set-image, /rengabot show-image. "
+                "To make a change, mention me in a channel.",
                 ephemeral=True,
             )
 
@@ -124,61 +192,6 @@ class DiscordMessenger(ChatMessenger):
             await interaction.channel.send(
                 content=f"Renga reset: {description or '(no description)'}",
                 file=discord.File(dest_path, filename="renga.png"),
-            )
-
-        @group.command(
-            name="change",
-            description="Make a single change to the current image",
-        )
-        @app_commands.describe(prompt="Describe a single change")
-        async def rengabot_change(interaction: discord.Interaction, prompt: str):
-            if not prompt:
-                await interaction.response.send_message(
-                    "Usage: /rengabot change prompt:<describe change>",
-                    ephemeral=True,
-                )
-                return
-
-            await interaction.response.defer(ephemeral=True, thinking=True)
-
-            guild_id = str(interaction.guild_id)
-            channel_id = str(interaction.channel_id)
-            try:
-                next_path = await asyncio.to_thread(
-                    self.rengabot.service.change_image,
-                    "discord",
-                    guild_id,
-                    channel_id,
-                    prompt,
-                )
-            except NoImageError:
-                await interaction.followup.send(
-                    self.rengabot.service.NO_IMAGE_MESSAGE,
-                    ephemeral=True,
-                )
-                return
-            except InvalidPromptError as e:
-                await interaction.followup.send(
-                    self.rengabot.service.format_invalid_prompt(e.reason),
-                    ephemeral=True,
-                )
-                return
-            except ChangeInProgressError:
-                await interaction.followup.send(
-                    self.rengabot.service.CHANGE_IN_PROGRESS_MESSAGE,
-                    ephemeral=True,
-                )
-                return
-            except GenerationError:
-                await interaction.followup.send(
-                    self.rengabot.service.GENERATION_ERROR_MESSAGE,
-                    ephemeral=True,
-                )
-                return
-
-            await interaction.channel.send(
-                content=f"Renga update: {prompt}",
-                file=discord.File(next_path, filename="renga.png"),
             )
 
         @group.command(

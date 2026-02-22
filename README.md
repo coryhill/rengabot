@@ -4,9 +4,9 @@ An AI-powered image manipulation game for Slack and Discord
 ## The Rules
 
 Users who are allowlisted as admins can set (or reset) the starting image in a channel.
-Users can then take turns telling Rengabot to make one change to the image. The change
-is made and the new image is posted to the channel. This then becomes the image that
-the next change is applied to, and so on.
+Users can then take turns telling Rengabot to make one change to the image by mentioning
+the bot publicly in the channel. The change is made and the new image is posted to the
+channel. This then becomes the image that the next change is applied to, and so on.
 
 ## How It Works
 
@@ -47,6 +47,8 @@ Discord does not use a manifest file. Configure the app in the Discord Developer
     - Check the `bot` and `applications.commands` options
   - Bot permissions:
     - Check the `Send messages`, `Attach files`, and `Use slash commands` options
+- On the bot tab:
+  - Enable the Message Content Intent (required so the bot can read mention prompts)
 - Copy the generated URL into your browser to invite the bot to your server
 - In `config.yaml` under `discord`:
   - Ensure 'enabled' is `true`

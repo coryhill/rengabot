@@ -36,12 +36,16 @@ class DummyClient:
         self.uploads = []
         self.ephemeral = []
         self.views = []
+        self.messages = []
 
     async def files_upload_v2(self, **kwargs):
         self.uploads.append(kwargs)
 
     async def chat_postEphemeral(self, **kwargs):
         self.ephemeral.append(kwargs)
+
+    async def chat_postMessage(self, **kwargs):
+        self.messages.append(kwargs)
 
     async def views_open(self, **kwargs):
         self.views.append(kwargs)
@@ -61,6 +65,14 @@ class DummyAck:
 
     async def __call__(self, **kwargs):
         self.calls.append(kwargs)
+
+
+class DummySay:
+    def __init__(self):
+        self.calls = []
+
+    async def __call__(self, text=None, **kwargs):
+        self.calls.append({"text": text, **kwargs})
 
 
 def _make_slack(config, model):
@@ -98,15 +110,24 @@ async def test_slack_change_invalid_prompt(tmp_path, monkeypatch):
     monkeypatch.setenv("UPLOADS_DIR", str(tmp_path))
     sm.rengabot.service.save_image_bytes("slack", "T1", "C1", b"base", ext="png")
 
-    respond = DummyRespond()
-    ack = DummyAck()
     client = DummyClient()
-    body = {"user_id": "U1", "text": "change add a bird", "channel_id": "C1", "team_id": "T1"}
+    say = DummySay()
+    event = {"user": "U1", "text": "<@U-bot> add a bird", "channel": "C1"}
+    body = {"team_id": "T1"}
 
-    await sm.handle_slash_cmd(ack, body, respond, client, types.SimpleNamespace(exception=lambda *a, **k: None))
+    task = await sm.handle_mention(
+        event,
+        body,
+        say,
+        client,
+        types.SimpleNamespace(exception=lambda *a, **k: None),
+    )
+    if task:
+        await task
 
-    assert respond.calls
-    assert respond.calls[0]["response_type"] == "ephemeral"
+    assert say.calls
+    assert client.messages
+    assert "Disallowed change" in client.messages[0]["text"]
 
 
 @pytest.mark.asyncio
@@ -129,8 +150,8 @@ async def test_slack_change_validation_short_circuit(tmp_path, monkeypatch):
     )
     assert model.validate_calls == ["add a bird"]
     assert model.generate_calls == []
-    assert client.ephemeral
-    assert "Disallowed change" in client.ephemeral[0]["text"]
+    assert client.messages
+    assert "Disallowed change" in client.messages[0]["text"]
 
 
 @pytest.mark.asyncio
@@ -142,17 +163,24 @@ async def test_slack_change_valid_prompt_uploads(tmp_path, monkeypatch):
     monkeypatch.setenv("UPLOADS_DIR", str(tmp_path))
     sm.rengabot.service.save_image_bytes("slack", "T1", "C1", b"base", ext="png")
 
-    respond = DummyRespond()
-    ack = DummyAck()
     client = DummyClient()
-    body = {"user_id": "U1", "text": "change add a bird", "channel_id": "C1", "team_id": "T1"}
+    say = DummySay()
+    event = {"user": "U1", "text": "<@U-bot> add a bird", "channel": "C1"}
+    body = {"team_id": "T1"}
 
     called = {}
     async def _run(*args, **kwargs):
         called["ok"] = True
     monkeypatch.setattr(sm, "_handle_change_async", _run)
-    await sm.handle_slash_cmd(ack, body, respond, client, types.SimpleNamespace(exception=lambda *a, **k: None))
-    await asyncio.sleep(0)
+    task = await sm.handle_mention(
+        event,
+        body,
+        say,
+        client,
+        types.SimpleNamespace(exception=lambda *a, **k: None),
+    )
+    if task:
+        await task
     assert called.get("ok") is True
 
 

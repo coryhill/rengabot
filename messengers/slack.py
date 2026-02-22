@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import requests
+import re
 from .base import ChatMessenger, register
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.aiohttp import AsyncSocketModeHandler
@@ -13,13 +14,13 @@ from game.service import (
 )
 
 HELP_MESSAGE = """Available subcommands:
-- *change* - make a change to the current image
 - *set-image* - (admin only) Set or reset the starting image
 - *show-image* - show the current image
+To make a change, mention me in a channel.
 """
 
-CHANGE_USAGE = """Usage: /rengabot change [describe change]
-Example: /rengabot change add an angry dinosaur in the background
+CHANGE_USAGE = """To make a change, mention the bot in a channel with your request.
+Example: @rengabot add an angry dinosaur in the background
 """
 
 @register("slack")
@@ -55,8 +56,32 @@ class SlackMessenger(ChatMessenger):
         self.app.command("/rengabot")(self.handle_slash_cmd)
         self.app.view("upload_modal")(self.handle_set_image_upload)
     
-    async def handle_mention(self, event, say):
-        await say("Use the /rengabot slash command!")
+    def _extract_prompt_from_mention(self, text: str) -> str:
+        if not text:
+            return ""
+        prompt = re.sub(r"<@[^>]+>", "", text)
+        return " ".join(prompt.replace("\n", " ").split()).lstrip(" ,:-").strip()
+
+    async def handle_mention(self, event, body, say, client, logger):
+        if event.get("bot_id") or event.get("subtype") == "bot_message":
+            return
+
+        prompt = self._extract_prompt_from_mention(event.get("text", ""))
+        if not prompt:
+            await say(CHANGE_USAGE)
+            return
+
+        channel_id = event.get("channel", "")
+        team_id = body.get("team_id", "")
+        user_id = event.get("user", "")
+
+        await say("Working on it...")
+        task = asyncio.create_task(
+            self._handle_change_async(
+                client, logger, user_id, team_id, channel_id, prompt
+            )
+        )
+        return task
 
     async def _handle_change_async(
         self,
@@ -72,31 +97,27 @@ class SlackMessenger(ChatMessenger):
                 self.rengabot.service.change_image, "slack", team_id, channel_id, prompt
             )
         except NoImageError:
-            await client.chat_postEphemeral(
+            await client.chat_postMessage(
                 channel=channel_id,
-                user=user_id,
                 text=self.rengabot.service.NO_IMAGE_MESSAGE,
             )
             return
         except InvalidPromptError as e:
-            await client.chat_postEphemeral(
+            await client.chat_postMessage(
                 channel=channel_id,
-                user=user_id,
                 text=self.rengabot.service.format_invalid_prompt(e.reason),
             )
             return
         except ChangeInProgressError:
-            await client.chat_postEphemeral(
+            await client.chat_postMessage(
                 channel=channel_id,
-                user=user_id,
                 text=self.rengabot.service.CHANGE_IN_PROGRESS_MESSAGE,
             )
             return
         except GenerationError as e:
             logger.exception("Image generation failed: %s", e)
-            await client.chat_postEphemeral(
+            await client.chat_postMessage(
                 channel=channel_id,
-                user=user_id,
                 text=self.rengabot.service.GENERATION_ERROR_MESSAGE,
             )
             return
@@ -104,7 +125,6 @@ class SlackMessenger(ChatMessenger):
             channel=channel_id,
             file=next_path,
             filename="renga.png",
-            initial_comment=f"Renga update: {prompt}",
         )
 
     async def handle_slash_cmd(self, ack, body, respond, client, logger):
@@ -125,27 +145,9 @@ class SlackMessenger(ChatMessenger):
                     response_type="ephemeral"
                 )
             case "change":
-                if len(fields) == 1:
-                    await respond(
-                        text=CHANGE_USAGE,
-                        response_type="ephemeral"
-                    )
-                    return
-                text = ' '.join(fields[1:])
-                channel_id = body.get("channel_id", "")
-                team_id = body.get("team_id", "")
-                current_path = self._get_current_image_path(team_id, channel_id)
-                if not current_path:
-                    await respond(
-                        text=self.rengabot.service.NO_IMAGE_MESSAGE,
-                        response_type="ephemeral",
-                    )
-                    return
-                await respond(text="Working on it...", response_type="ephemeral")
-                asyncio.create_task(
-                    self._handle_change_async(
-                        client, logger, user_id, team_id, channel_id, text
-                    )
+                await respond(
+                    text=CHANGE_USAGE,
+                    response_type="ephemeral"
                 )
             case "set-image":
                 if not self._is_admin(user_id):
