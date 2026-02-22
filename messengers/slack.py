@@ -185,19 +185,6 @@ class SlackMessenger(ChatMessenger):
                                     "max_files": 1
                                 }
                             },
-                            {
-                                "type": "input",
-                                "block_id": "message_input_block",
-                                "label": {
-                                    "type": "plain_text",
-                                    "text": "Description",
-                                },
-                                "element": {
-                                    "type": "plain_text_input",
-                                    "action_id": "message_input_element",
-                                    "multiline": True,
-                                },
-                            },
                         ]
                     }
                 )
@@ -242,8 +229,6 @@ class SlackMessenger(ChatMessenger):
             )
             return
         
-        description = state_values["message_input_block"]["message_input_element"]["value"]
-
         file_id = files[0]["id"]
         file_info = await client.files_info(file=file_id)
         f = file_info["file"]
@@ -303,7 +288,7 @@ class SlackMessenger(ChatMessenger):
         # Share to slack channel
         await client.chat_postMessage(
             channel=channel_id,
-            text=f"The renga has been reset: {description}\n{file_permalink}"
+            text=f"The renga has been reset.\n{file_permalink}"
         )
 
     def run(self):
