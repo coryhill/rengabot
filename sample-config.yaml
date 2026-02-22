@@ -10,6 +10,12 @@ messengers:
       - U98765432
   discord:
     enabled: false
+    bot_token: "my-discord-bot-token"
+    # Optional: restrict slash command sync to a single guild
+    guild_id: "1234567891234567891"
+    # Which users are allowed to reset images, etc. (user IDs)
+    admins:
+      - "123456789012345678"
 model:
   class: model.gemini.GeminiModel
   args:

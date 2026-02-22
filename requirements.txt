@@ -1,8 +1,10 @@
 annotated-types==0.7.0
 anyio==4.10.0
+audioop-lts==0.2.2; python_version>='3.13'
 cachetools==5.5.2
 certifi==2025.8.3
 charset-normalizer==3.4.3
+discord.py==2.4.0
 google-auth==2.40.3
 google-genai==1.32.0
 h11==0.16.0

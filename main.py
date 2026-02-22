@@ -31,11 +31,16 @@ class Rengabot:
         os.replace(src_file, f"{path}/current.png")
 
     def run(self):
+        threads = []
         for svc, svc_config in self.config["messengers"].items():
             if svc_config["enabled"]:
                 messenger = initialize_messenger(svc, svc_config, self)
-                messenger.run()
                 self.messengers.append(messenger)
+                t = threading.Thread(target=messenger.run, daemon=True)
+                t.start()
+                threads.append(t)
+        for t in threads:
+            t.join()
 
 if __name__ == '__main__':
     config = load_config()

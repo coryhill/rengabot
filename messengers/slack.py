@@ -9,6 +9,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 HELP_MESSAGE = """Available subcommands:
 - *change* - make a change to the current image
 - *set-image* - (admin only) Set or reset the starting image
+- *show-image* - show the current image
 """
 
 CHANGE_USAGE = """Usage: /rengabot change [describe change]
@@ -163,6 +164,22 @@ class SlackMessenger(ChatMessenger):
                             },
                         ]
                     }
+                )
+            case "show-image":
+                channel_id = body.get("channel_id", "")
+                team_id = body.get("team_id", "")
+                current_path = self._get_current_image_path(team_id, channel_id)
+                if not current_path:
+                    respond(
+                        text="No image has been set yet. An admin must run `/rengabot set-image` first.",
+                        response_type="ephemeral",
+                    )
+                    return
+                client.files_upload_v2(
+                    channel=channel_id,
+                    file=current_path,
+                    filename="renga.png",
+                    initial_comment="Current renga image:",
                 )
 
     def handle_set_image_upload(self, ack, body, client, logger):
