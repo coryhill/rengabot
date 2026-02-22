@@ -8,6 +8,14 @@ Users can then take turns telling Rengabot to make one change to the image by me
 the bot publicly in the channel. The change is made and the new image is posted to the
 channel. This then becomes the image that the next change is applied to, and so on.
 
+### Example
+
+| Action| Result |
+| :---: | :---: |
+| */rengabot set-image is called and this image is uploaded* | ![starting image](docs/image1_256.png) |
+| @rengabot give the man a mohawk | ![first change](docs/image2_256.png) |
+  @rengabot make his glasses way too big for his face | ![second change](docs/image3_256.png) |
+
 ## How It Works
 
 The bot has a websocket connection to Slack and/or Discord. When a request is made to
