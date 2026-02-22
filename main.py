@@ -6,6 +6,7 @@ import threading
 import yaml
 from messengers import ChatMessenger, initialize_messenger
 from model import load_model
+from game.service import GameService
 
 def load_config(path="config.yaml"):
     with open(path, "r") as f:
@@ -24,6 +25,7 @@ class Rengabot:
 
         model_config = config["model"]
         self.model = load_model(model_config["class"], model_config["args"])
+        self.service = GameService(self.model)
 
         self.messengers = []
     

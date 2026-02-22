@@ -2,10 +2,10 @@ import asyncio
 import json
 import os
 import requests
-from typing import Optional
 from .base import ChatMessenger, register
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.aiohttp import AsyncSocketModeHandler
+from game.service import GenerationError, InvalidPromptError, NoImageError
 
 HELP_MESSAGE = """Available subcommands:
 - *change* - make a change to the current image
@@ -42,17 +42,8 @@ class SlackMessenger(ChatMessenger):
     def _is_admin(self, user_id: str) -> bool:
         return user_id in self.config.get("admins", [])
 
-    def _channel_dir(self, team_id: str, channel_id: str) -> str:
-        uploads_dir = os.environ.get("UPLOADS_DIR", "/tmp")
-        return os.path.join(uploads_dir, team_id, channel_id)
-
-    def _get_current_image_path(self, team_id: str, channel_id: str) -> Optional[str]:
-        channel_dir = self._channel_dir(team_id, channel_id)
-        for ext in ("png", "jpg", "jpeg"):
-            path = os.path.join(channel_dir, f"current.{ext}")
-            if os.path.exists(path):
-                return path
-        return None
+    def _get_current_image_path(self, team_id: str, channel_id: str):
+        return self.rengabot.service.get_current_image_path("slack", team_id, channel_id)
 
     def register_listeners(self):
         self.app.event("app_mention")(self.handle_mention)
@@ -70,21 +61,26 @@ class SlackMessenger(ChatMessenger):
         team_id: str,
         channel_id: str,
         prompt: str,
-        current_path: str,
     ):
-        is_valid, reason = await asyncio.to_thread(self.rengabot.model.validate_prompt, prompt)
-        if not is_valid:
+        try:
+            next_path = await asyncio.to_thread(
+                self.rengabot.service.change_image, "slack", team_id, channel_id, prompt
+            )
+        except NoImageError:
             await client.chat_postEphemeral(
                 channel=channel_id,
                 user=user_id,
-                text=f"Disallowed change: {reason or 'prompt does not match the rules.'}",
+                text="No image has been set yet. An admin must run `/rengabot set-image` first.",
             )
             return
-        try:
-            image_bytes = await asyncio.to_thread(
-                self.rengabot.model.generate_image, prompt, current_path
+        except InvalidPromptError as e:
+            await client.chat_postEphemeral(
+                channel=channel_id,
+                user=user_id,
+                text=f"Disallowed change: {e.reason or 'prompt does not match the rules.'}",
             )
-        except Exception as e:
+            return
+        except GenerationError as e:
             logger.exception("Image generation failed: %s", e)
             await client.chat_postEphemeral(
                 channel=channel_id,
@@ -92,11 +88,6 @@ class SlackMessenger(ChatMessenger):
                 text="Image generation failed. Please try again.",
             )
             return
-        channel_dir = self._channel_dir(team_id, channel_id)
-        os.makedirs(channel_dir, exist_ok=True)
-        next_path = os.path.join(channel_dir, "current.png")
-        with open(next_path, "wb") as f:
-            f.write(image_bytes)
         await client.files_upload_v2(
             channel=channel_id,
             file=next_path,
@@ -141,7 +132,7 @@ class SlackMessenger(ChatMessenger):
                 await respond(text="Working on it...", response_type="ephemeral")
                 asyncio.create_task(
                     self._handle_change_async(
-                        client, logger, user_id, team_id, channel_id, text, current_path
+                        client, logger, user_id, team_id, channel_id, text
                     )
                 )
             case "set-image":
@@ -247,7 +238,7 @@ class SlackMessenger(ChatMessenger):
 
             # Ensure a safe local path
             # TODO: figure out where files should actually go
-            dest_path = self._channel_dir(team_id, channel_id)
+            dest_path = self.rengabot.service.channel_dir("slack", team_id, channel_id)
             os.makedirs(dest_path, exist_ok=True)
             local_path = os.path.join(dest_path, f"current.{file_ext}")
 
@@ -266,6 +257,10 @@ class SlackMessenger(ChatMessenger):
         except Exception as e:
             logger.exception("Local save failed: %s", e)
             
+        self.rengabot.service.save_image_file(
+            "slack", team_id, channel_id, local_path, file_ext
+        )
+
         # Share to slack channel
         await client.chat_postMessage(
             channel=channel_id,

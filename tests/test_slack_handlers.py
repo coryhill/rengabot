@@ -77,9 +77,8 @@ async def test_slack_change_invalid_prompt(tmp_path, monkeypatch):
     model = DummyModel(valid=False, reason="too many changes")
     sm = _make_slack(config, model)
 
-    image_path = tmp_path / "current.png"
-    image_path.write_bytes(b"base")
-    monkeypatch.setattr(sm, "_get_current_image_path", lambda team, chan: str(image_path))
+    monkeypatch.setenv("UPLOADS_DIR", str(tmp_path))
+    sm.rengabot.service.save_image_bytes("slack", "T1", "C1", b"base", ext="png")
 
     respond = DummyRespond()
     ack = DummyAck()
@@ -98,8 +97,8 @@ async def test_slack_change_validation_short_circuit(tmp_path, monkeypatch):
     model = DummyModel(valid=False, reason="too many changes")
     sm = _make_slack(config, model)
 
-    image_path = tmp_path / "current.png"
-    image_path.write_bytes(b"base")
+    monkeypatch.setenv("UPLOADS_DIR", str(tmp_path))
+    sm.rengabot.service.save_image_bytes("slack", "T1", "C1", b"base", ext="png")
 
     client = DummyClient()
     await sm._handle_change_async(
@@ -109,7 +108,6 @@ async def test_slack_change_validation_short_circuit(tmp_path, monkeypatch):
         "T1",
         "C1",
         "add a bird",
-        str(image_path),
     )
     assert model.validate_calls == ["add a bird"]
     assert model.generate_calls == []
@@ -123,9 +121,8 @@ async def test_slack_change_valid_prompt_uploads(tmp_path, monkeypatch):
     model = DummyModel(valid=True, image_bytes=b"newpng")
     sm = _make_slack(config, model)
 
-    image_path = tmp_path / "current.png"
-    image_path.write_bytes(b"base")
-    monkeypatch.setattr(sm, "_get_current_image_path", lambda team, chan: str(image_path))
+    monkeypatch.setenv("UPLOADS_DIR", str(tmp_path))
+    sm.rengabot.service.save_image_bytes("slack", "T1", "C1", b"base", ext="png")
 
     respond = DummyRespond()
     ack = DummyAck()
@@ -164,8 +161,8 @@ def test_slack_channel_dir_and_get_current(tmp_path, monkeypatch):
     monkeypatch.setenv("UPLOADS_DIR", str(tmp_path))
     config = {"bot_token": "x", "app_token": "y", "admins": []}
     sm = _make_slack(config, DummyModel())
-    channel_dir = sm._channel_dir("T1", "C1")
-    assert channel_dir == os.path.join(str(tmp_path), "T1", "C1")
+    channel_dir = sm.rengabot.service.channel_dir("slack", "T1", "C1")
+    assert channel_dir == os.path.join(str(tmp_path), "slack", "T1", "C1")
     os.makedirs(channel_dir, exist_ok=True)
     path = os.path.join(channel_dir, "current.jpeg")
     with open(path, "wb") as f:

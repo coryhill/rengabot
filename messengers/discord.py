@@ -4,6 +4,7 @@ from typing import Optional
 
 import discord
 from discord import app_commands
+from game.service import GenerationError, InvalidPromptError, NoImageError
 
 from .base import ChatMessenger, register
 
@@ -43,16 +44,10 @@ class DiscordMessenger(ChatMessenger):
         return False
 
     def _channel_dir(self, guild_id: str, channel_id: str) -> str:
-        uploads_dir = os.environ.get("UPLOADS_DIR", "/tmp")
-        return os.path.join(uploads_dir, "discord", guild_id, channel_id)
+        return self.rengabot.service.channel_dir("discord", guild_id, channel_id)
 
     def _get_current_image_path(self, guild_id: str, channel_id: str) -> Optional[str]:
-        channel_dir = self._channel_dir(guild_id, channel_id)
-        for ext in ("png", "jpg", "jpeg"):
-            path = os.path.join(channel_dir, f"current.{ext}")
-            if os.path.exists(path):
-                return path
-        return None
+        return self.rengabot.service.get_current_image_path("discord", guild_id, channel_id)
 
     def _register_commands(self):
         guild = discord.Object(id=int(self.guild_id)) if self.guild_id else None
@@ -113,6 +108,9 @@ class DiscordMessenger(ChatMessenger):
                 ext = "png"
             dest_path = os.path.join(dest_dir, f"current.{ext}")
             await image.save(dest_path)
+            self.rengabot.service.save_image_file(
+                "discord", guild_id, channel_id, dest_path, ext
+            )
 
             await interaction.followup.send(
                 f"The renga has been reset: {description or '(no description)'}",
@@ -140,40 +138,32 @@ class DiscordMessenger(ChatMessenger):
 
             guild_id = str(interaction.guild_id)
             channel_id = str(interaction.channel_id)
-            current_path = self._get_current_image_path(guild_id, channel_id)
-            if not current_path:
+            try:
+                next_path = await asyncio.to_thread(
+                    self.rengabot.service.change_image,
+                    "discord",
+                    guild_id,
+                    channel_id,
+                    prompt,
+                )
+            except NoImageError:
                 await interaction.followup.send(
                     "No image has been set yet. An admin must run `/rengabot set-image` first.",
                     ephemeral=True,
                 )
                 return
-
-            is_valid, reason = await asyncio.to_thread(
-                self.rengabot.model.validate_prompt, prompt
-            )
-            if not is_valid:
+            except InvalidPromptError as e:
                 await interaction.followup.send(
-                    f"Disallowed change: {reason or 'prompt does not match the rules.'}",
+                    f"Disallowed change: {e.reason or 'prompt does not match the rules.'}",
                     ephemeral=True,
                 )
                 return
-
-            try:
-                image_bytes = await asyncio.to_thread(
-                    self.rengabot.model.generate_image, prompt, current_path
-                )
-            except Exception:
+            except GenerationError:
                 await interaction.followup.send(
                     "Image generation failed. Please try again.",
                     ephemeral=True,
                 )
                 return
-
-            dest_dir = self._channel_dir(guild_id, channel_id)
-            os.makedirs(dest_dir, exist_ok=True)
-            next_path = os.path.join(dest_dir, "current.png")
-            with open(next_path, "wb") as f:
-                f.write(image_bytes)
 
             await interaction.channel.send(
                 content=f"Renga update: {prompt}",
@@ -189,8 +179,11 @@ class DiscordMessenger(ChatMessenger):
 
             guild_id = str(interaction.guild_id)
             channel_id = str(interaction.channel_id)
-            current_path = self._get_current_image_path(guild_id, channel_id)
-            if not current_path:
+            try:
+                current_path = self.rengabot.service.show_image(
+                    "discord", guild_id, channel_id
+                )
+            except NoImageError:
                 await interaction.followup.send(
                     "No image has been set yet. An admin must run `/rengabot set-image` first.",
                     ephemeral=True,
